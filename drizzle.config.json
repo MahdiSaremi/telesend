@@ -1,0 +1,12 @@
+{
+  "dialect": "mysql",
+  "schema": "./api/db.js",
+  "out": "./drizzle",
+  "dbCredentials": {
+    "host": "localhost",
+    "user": "root",
+    "password": "0915",
+    "port": 3306,
+    "database": "api_telesend"
+  }
+}

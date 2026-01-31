@@ -75,6 +75,7 @@ export const messages = mysqlTable('messages', {
         onUpdate: 'cascade'
     }).notNull(),
     text: text('text').notNull(),
+    iv: text('iv').notNull(),
     chat_key_version: bigint('chat_key_version', { unsigned: true }).notNull(),
     createdAt: timestamp('created_at').notNull().defaultNow(),
     updatedAt: timestamp('updated_at').onUpdateNow(),

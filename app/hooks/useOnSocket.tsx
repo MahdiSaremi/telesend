@@ -1,18 +1,16 @@
 'use client'
 
-import {useContext, useEffect} from "react";
-import {AppContext} from "@/app/hooks/types";
+import {useEffect} from "react";
+import {useCore} from "@/app/hooks/useCore";
 
 export function useOnSocket(ev: string, listener: (...args: any) => void) {
-    const app = useContext(AppContext)
+    const core = useCore()
 
     useEffect(() => {
-        if (!app?.socket) return
-
-        app.socket.on(ev, listener)
+        core.connection.getSocket()?.on(ev, listener)
 
         return () => {
-            app.socket?.off(ev, listener)
+            core.connection.getSocket()?.off(ev, listener)
         }
-    }, [app?.socket, ev]);
+    }, [ev]);
 }

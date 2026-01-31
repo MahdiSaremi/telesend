@@ -1,6 +1,7 @@
 import {AuthInfo} from "@/shared/resources";
 import {createContext} from "react";
 import {Socket} from "socket.io-client";
+import {useConnection} from "@/app/hooks/useConnection";
 
 export interface SecurityData {
     auth: AuthInfo;
@@ -11,13 +12,10 @@ export interface SecurityData {
 export type PageInitial = { layout: 'login' | 'home' | 'search' | 'private_chat'; data?: any }
 
 export const AppContext = createContext<null | {
-    socket: Socket | null;
-    socketId: number | null;
-    status: 'waiting_for_network' | 'connecting' | 'connected';
+    connection: ReturnType<typeof useConnection>;
     securityData: SecurityData | null;
     setSecurityData(value: SecurityData | null): void;
-    call(name: string, message: any, {success, fail}: { success?: Function; fail?: Function }): void;
-    callAsync<T = any, E = string>(name: string, message: any): Promise<[true, T, null] | [false, null, E | null]>;
+    pages: PageInitial[];
     pushPage(layout: PageInitial['layout'], data?: any): void;
     popPage(): void;
 }>(null)

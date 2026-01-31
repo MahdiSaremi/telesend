@@ -2,6 +2,7 @@
 
 import {DependencyList, useContext, useEffect} from "react";
 import {AppContext} from "@/app/hooks/types";
+import {useCore} from "@/app/hooks/useCore";
 
 type ReplacedCall = (name: string, message: any, options: {success?: Function; fail?: Function}) => void
 
@@ -9,52 +10,42 @@ export function useOpenCall({open, close}: {
     open: (call: ReplacedCall) => void;
     close: (call: ReplacedCall) => void;
 }, deps?: DependencyList) {
-    const app = useContext(AppContext)
+    const core = useCore()
 
-    useEffect(() => {
-        if (!app?.socket) return
-
+    core.useConnected(() => {
         let isOpened = false
         let isClosing = false
 
-        let random = Math.random()
-
         const callOpen = () => {
-            console.log(`OPEN ${random}`)
-            app.socket?.off('connect', callOpen)
-
             open((name, message, {success, fail}) => {
-                app.call(name, message, {
-                    success: (data: any) => {
+                core.connection.call(name, message).then(([ok, data, err]) => {
+                    if (ok) {
                         isOpened = true
                         success?.(data)
 
                         if (isClosing) {
                             callClose()
                         }
-                    },
-                    fail: (err: any) => {
+                    } else {
                         fail?.(err)
-                    },
+                    }
                 })
             })
         }
 
         const callClose = () => {
-            console.log(`CLOSE ${random}`)
             close((name, message, {success, fail}) => {
-                app.call(name, message, {
-                    success,
-                    fail,
+                core.connection.call(name, message).then(([ok, data, err]) => {
+                    if (ok) {
+                        success?.(data)
+                    } else {
+                        fail?.(err)
+                    }
                 })
             })
         }
 
-        if (app.socket.connected) {
-            callOpen()
-        } else {
-            app.socket.on('connect', callOpen)
-        }
+        callOpen()
 
         return () => {
             isClosing = true
@@ -63,5 +54,5 @@ export function useOpenCall({open, close}: {
                 callClose()
             }
         }
-    }, [app?.socket, ...deps ?? []]);
+    }, deps);
 }

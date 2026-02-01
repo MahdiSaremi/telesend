@@ -2,17 +2,20 @@
 
 import {useEffect, useRef} from "react";
 
-export function ScreenContainer({children}: {
+export function ScreenContainer({children, resizeUsing}: {
     children?: React.ReactNode;
+    resizeUsing?: (def: () => void) => void;
 }) {
     const containerElement = useRef<HTMLDivElement | null>(null)
 
     useEffect(() => {
         if (!containerElement.current || !window.visualViewport) return
 
-        const callback = () => {
+        const callbackDefault = () => {
             containerElement.current!.style.height = window.visualViewport!.height + "px"
         }
+
+        const callback = resizeUsing ? (() => resizeUsing(callbackDefault)) : callbackDefault
 
         callback()
 

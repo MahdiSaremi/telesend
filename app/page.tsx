@@ -1,5 +1,5 @@
 'use client'
-import {createContext, Fragment, useContext, useEffect, useRef, useState} from 'react'
+import {createContext, Fragment, useContext, useEffect, useLayoutEffect, useRef, useState} from 'react'
 import io, {Socket} from 'socket.io-client'
 import {AuthInfo, ChatResource, HomeChatResource, MessageResource, UserResource} from "@/shared/resources";
 import {Button} from "@/components/ui/button";
@@ -653,6 +653,7 @@ function PrivateChatPage({user}: {
                                 }))).filter(v => v !== null)
 
                                 setMessages(messages => [...messages, ...newMessages])
+                                scrollToEndInNextRender(true)
                             }
                         })
                     }
@@ -683,6 +684,10 @@ function PrivateChatPage({user}: {
             } satisfies MessageResource & DecryptedMessage
 
             setMessages(messages => [...messages, newMessage])
+
+            if (scrollIsEnd()) {
+                scrollToEndInNextRender()
+            }
         }
     }
 
@@ -730,12 +735,53 @@ function PrivateChatPage({user}: {
                 } satisfies MessageResource & DecryptedMessage
 
                 setMessages(messages => [...messages, newMessage])
+
+                if (scrollIsEnd()) {
+                    scrollToEndInNextRender()
+                }
             }
         }
     }
 
+    const shouldScrollToEndInNextRender = useRef<null | {instant: boolean}>(null)
+
+    const scrollToEnd = (instant: boolean = false) => {
+        if (!chatContentElement.current) return
+
+        chatContentElement.current.scrollTo({
+            top: chatContentElement.current.scrollHeight - chatContentElement.current.clientHeight,
+            behavior: instant ? "instant" : "smooth",
+        })
+    }
+
+    const scrollIsEnd = (): boolean => {
+        if (!chatContentElement.current) return false
+
+        return chatContentElement.current.scrollHeight - chatContentElement.current.clientHeight - chatContentElement.current.scrollTop < 30
+    }
+
+    const scrollToEndInNextRender = (instant: boolean = false) => {
+        shouldScrollToEndInNextRender.current = {instant}
+    }
+
+    useLayoutEffect(() => {
+        if (shouldScrollToEndInNextRender.current) {
+            scrollToEnd(shouldScrollToEndInNextRender.current.instant)
+            shouldScrollToEndInNextRender.current = null
+        }
+    })
+
     return (
-        <ScreenContainer>
+        <ScreenContainer
+            resizeUsing={def => {
+                const end = scrollIsEnd()
+                def()
+
+                if (end) {
+                    scrollToEnd()
+                }
+            }}
+        >
             <div className="h-full flex flex-col bg-emerald-200 dark:bg-slate-800 dark:text-white relative">
                 <div>
                     <div
@@ -822,6 +868,12 @@ function PrivateChatPage({user}: {
                                 value={typingText}
                                 setValue={setTypingText}
                                 inputClassName="min-w-0 focus:outline-none! min-h-10 h-auto p-2"
+                                onKeyDown={e => {
+                                    if (e.key == 'Enter' && e.ctrlKey) {
+                                        e.preventDefault()
+                                        sendMessage()
+                                    }
+                                }}
                             />
                         </div>
                         <div
@@ -945,7 +997,7 @@ function PrivateChatMessage({message, isChained}: {
                         <div className="flex items-end gap-1 self-end me-auto select-none">
                             {isSelf && <span className="text-[0.6rem] opacity-80 w-max">
                                 {isChained ? <CheckCheckIcon className="size-3.5 text-primary"/> :
-                                    <CheckIcon className="size-3.5 text-slate-500/50"/>}
+                                    <CheckIcon className="size-3.5 text-slate-500/50 dark:text-white/50"/>}
                             </span>}
                             {/*<span className="text-[0.6rem] opacity-80 w-max">ویرایش شده</span>*/}
                             <span className="text-xs opacity-80">18:32</span>

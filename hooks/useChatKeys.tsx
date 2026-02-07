@@ -1,7 +1,7 @@
 'use client'
 
 import {useRef} from "react";
-import {useCore} from "@/app/hooks/useCore";
+import {useCore} from "@/hooks/useCore";
 
 export function useChatKeys(chatId?: string) {
     const core = useCore()

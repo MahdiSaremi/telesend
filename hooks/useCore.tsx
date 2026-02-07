@@ -1,7 +1,7 @@
 'use client'
 
 import {DependencyList, useContext, useEffect, useMemo} from "react";
-import {AppContext} from "@/app/hooks/types";
+import {AppContext} from "@/hooks/types";
 import {AuthInfo} from "@/shared/resources";
 import {
     arrayBufferToBase64,

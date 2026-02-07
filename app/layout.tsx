@@ -1,4 +1,3 @@
-import {Toaster} from "@/components/ui/sonner";
 import "./globals.css";
 
 export default async function RootLayout({children}: Readonly<{
@@ -11,7 +10,6 @@ export default async function RootLayout({children}: Readonly<{
             className="antialiased bg-white dark:bg-slate-700 flex flex-col"
         >
         {children}
-        <Toaster/>
         </body>
         </html>
     );

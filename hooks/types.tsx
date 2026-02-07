@@ -1,7 +1,7 @@
 import {AuthInfo} from "@/shared/resources";
 import {createContext} from "react";
 import {Socket} from "socket.io-client";
-import {useConnection} from "@/app/hooks/useConnection";
+import {useConnection} from "@/hooks/useConnection";
 
 export interface SecurityData {
     auth: AuthInfo;

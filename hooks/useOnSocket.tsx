@@ -1,7 +1,7 @@
 'use client'
 
 import {useEffect} from "react";
-import {useCore} from "@/app/hooks/useCore";
+import {useCore} from "@/hooks/useCore";
 
 export function useOnSocket(ev: string, listener: (...args: any) => void) {
     const core = useCore()

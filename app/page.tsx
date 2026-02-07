@@ -28,15 +28,15 @@ import {
     generateKeyPair,
     importPrivateKey, importPublicKey, stringToUint8Array, uint8ArrayToString
 } from "@/shared/helpers";
-import {ScreenContainer} from "@/app/ScreenContainer";
-import {EditableBox} from "@/app/components/EditableBox";
+import {ScreenContainer} from "@/components/ScreenContainer";
+import {EditableBox} from "@/components/EditableBox";
 import {Skeleton} from "@/components/ui/skeleton";
-import {AppContext, PageInitial, SecurityData} from "@/app/hooks/types";
-import {useOpenCall} from "@/app/hooks/useOpenCall";
-import {useOnSocket} from "@/app/hooks/useOnSocket";
-import {useConnection} from "@/app/hooks/useConnection";
-import {useCore} from "@/app/hooks/useCore";
-import {useChatKeys} from "@/app/hooks/useChatKeys";
+import {AppContext, PageInitial, SecurityData} from "@/hooks/types";
+import {useOpenCall} from "@/hooks/useOpenCall";
+import {useOnSocket} from "@/hooks/useOnSocket";
+import {useConnection} from "@/hooks/useConnection";
+import {useCore} from "@/hooks/useCore";
+import {useChatKeys} from "@/hooks/useChatKeys";
 
 type DecryptedMessage = {
     decrypted_text: string | null;

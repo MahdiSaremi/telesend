@@ -1,8 +1,8 @@
 'use client'
 
 import {DependencyList, useContext, useEffect} from "react";
-import {AppContext} from "@/app/hooks/types";
-import {useCore} from "@/app/hooks/useCore";
+import {AppContext} from "@/hooks/types";
+import {useCore} from "@/hooks/useCore";
 
 type ReplacedCall = (name: string, message: any, options: {success?: Function; fail?: Function}) => void
 

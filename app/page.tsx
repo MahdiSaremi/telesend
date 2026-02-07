@@ -1,7 +1,6 @@
 'use client'
-import {createContext, Fragment, useContext, useEffect, useLayoutEffect, useRef, useState} from 'react'
-import io, {Socket} from 'socket.io-client'
-import {AuthInfo, ChatResource, HomeChatResource, MessageResource, UserResource} from "@/shared/resources";
+import {useEffect, useLayoutEffect, useRef, useState} from 'react'
+import {ChatResource, HomeChatResource, MessageResource, UserResource} from "@/shared/resources";
 import {Button} from "@/components/ui/button";
 import {
     ArrowLeftIcon,
@@ -12,22 +11,11 @@ import {
     SearchIcon, SendIcon,
     SmileIcon, UploadCloudIcon, XIcon
 } from "lucide-react";
-import {Badge} from "@/components/ui/badge";
-import {AnimatePresence, LayoutGroup, motion} from "framer-motion";
+import {AnimatePresence, motion} from "framer-motion";
 import {cn} from "@/lib/utils";
 import {FaTelegram} from "react-icons/fa";
 import {Input} from "@/components/ui/form/input";
 import {Alert} from "@/components/bui/alert";
-import {
-    arrayBufferToBase64,
-    base64ToArrayBuffer,
-    decryptPrivateKeyString, decryptUsingCustomKey, decryptUsingPrivateKey,
-    deriveKey,
-    encryptPrivateKey, encryptUsingCustomKey,
-    exportKey,
-    generateKeyPair,
-    importPrivateKey, importPublicKey, stringToUint8Array, uint8ArrayToString
-} from "@/shared/helpers";
 import {ScreenContainer} from "@/components/ScreenContainer";
 import {EditableBox} from "@/components/EditableBox";
 import {Skeleton} from "@/components/ui/skeleton";

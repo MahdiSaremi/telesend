@@ -1,18 +1,22 @@
-import {chat_keys, chats, messages, users} from "@/api/db";
+import {User} from "@/api/entities/user.entity";
+import {Chat} from "@/api/entities/chat.entity";
+import {Message} from "@/api/entities/message.entity";
+import {ChatKey} from "@/api/entities/chat_key.entity";
+import {SqlEntityManager} from "@mikro-orm/knex";
 
 export interface AuthInfo {
-    id: string;
+    id: number;
     name: string;
     username: string;
-    public_key: string | null;
-    encrypted_private_key: string | null;
+    public_key?: string;
+    encrypted_private_key?: string;
     iv: number[] | null;
     key_salt: number[] | null;
 }
 
-export function AuthInfoMake(resource: (typeof users)['_']['inferSelect']): AuthInfo {
+export function AuthInfoMake(resource: User): AuthInfo {
     return {
-        id: resource.id.toString(),
+        id: resource.id,
         name: resource.name,
         username: resource.username,
         public_key: resource.public_key,
@@ -23,78 +27,139 @@ export function AuthInfoMake(resource: (typeof users)['_']['inferSelect']): Auth
 }
 
 export interface UserResource {
-    id: string;
+    id: number;
     name: string;
     username: string;
 }
 
-export function UserResourceMake(resource: (typeof users)['_']['inferSelect']): UserResource {
+export function UserResourceMake(resource: User): UserResource {
     return {
-        id: resource.id.toString(),
+        id: resource.id,
         name: resource.name,
         username: resource.username,
     }
 }
 
-export type HomeChatResource = {
-    id: string;
-    title: string;
-    text?: string;
-    iv?: number[];
-    encrypted_key?: string;
+export interface HomeChatResource {
+    chat: ChatResource;
+    last_message?: MessageResource;
+}
+
+export function HomeChatResourceMakeCollection(
+    em: SqlEntityManager,
+    resource: Chat[],
+    userId: number,
+): Promise<HomeChatResource[]> {
+    return Promise.all(resource.map(async chat => {
+        let lastMessage = (await chat.messages.matching({
+            orderBy: {id: 'desc'},
+            limit: 1,
+        }))[0]
+
+        return {
+            chat: await ChatResourceMake(em, chat, userId),
+            last_message: lastMessage ? MessageResourceMake(lastMessage) : undefined,
+        } satisfies HomeChatResource
+    }))
+}
+
+export type ChatResource = {
+    id: number;
+    encrypted_chat_key: string;
+    version: number;
 } & ({
     type: 'private';
     user: UserResource;
+} | {
+    type: 'group',
+} | {
+    type: 'channel',
 })
 
-export function HomeChatPrivateResourceMake(
-    resource: (typeof chats)['_']['inferSelect'],
-    title: string,
-    lastMessage: (typeof messages)['_']['inferSelect'] | null,
-    lastKey: (typeof chat_keys)['_']['inferSelect'] | null,
-    user: (typeof users)['_']['inferSelect'],
-): HomeChatResource {
+export async function ChatResourceMake(em: SqlEntityManager, resource: Chat, userId: number): Promise<ChatResource> {
+    const chat_key = await resource.getUserLastKey(userId)
+
+    if (resource.type == 'private') {
+        const user = (await resource.members.matching({
+            where: {
+                user: {$ne: userId},
+                is_joined: true,
+            },
+            limit: 1,
+            populate: ['user'],
+        }))[0].user
+        return ChatResourcePrivateMake(resource, chat_key, user)
+    } else if (resource.type == 'channel') {
+        return ChatResourceChannelMake(resource, chat_key)
+    } else if (resource.type == 'group') {
+        return ChatResourceGroupMake(resource, chat_key)
+    } else {
+        return null as never
+    }
+}
+
+export function ChatResourcePrivateMake(resource: Chat, chat_key: ChatKey, user: User): ChatResource {
     return {
-        id: resource.id.toString(),
-        title: title,
-        text: lastMessage?.text,
-        iv: lastMessage ? JSON.parse(lastMessage.iv) : null,
-        encrypted_key: lastKey?.encrypted_chat_key,
+        id: resource.id,
+        encrypted_chat_key: chat_key.encrypted_chat_key,
+        version: chat_key.version,
         type: 'private',
         user: UserResourceMake(user),
     }
 }
 
-export interface ChatResource {
-    id: string;
-    type: (typeof chats)['_']['inferSelect']['type'];
-    encrypted_chat_key: string;
-    version: string;
+export function ChatResourceGroupMake(resource: Chat, chat_key: ChatKey): ChatResource {
+    return {
+        id: resource.id,
+        encrypted_chat_key: chat_key.encrypted_chat_key,
+        version: chat_key.version,
+        type: 'group',
+    }
 }
 
-export function ChatResourceMake(resource: (typeof chats)['_']['inferSelect'], chat_key: (typeof chat_keys)['_']['inferSelect']): ChatResource {
+export function ChatResourceChannelMake(resource: Chat, chat_key: ChatKey): ChatResource {
     return {
-        id: resource.id.toString(),
-        type: resource.type,
+        id: resource.id,
         encrypted_chat_key: chat_key.encrypted_chat_key,
-        version: chat_key.version.toString(),
+        version: chat_key.version,
+        type: 'channel',
     }
 }
 
 export interface MessageResource {
-    id: string;
-    sender_id: string;
+    id: number;
+    sender: UserResource;
+    chat_id: number;
     text: string;
     iv: number[];
-    chat_key_version: string;
+    chat_key_version: number;
+    created_at?: string;
 }
 
-export function MessageResourceMake(resource: (typeof messages)['_']['inferSelect']): MessageResource {
+export function MessageResourceMake(resource: Message): MessageResource {
     return {
-        id: resource.id.toString(),
-        sender_id: resource.sender_id.toString(),
+        id: resource.id,
+        sender: UserResourceMake(resource.sender),
+        chat_id: resource.chat.id,
         text: resource.text,
         iv: JSON.parse(resource.iv),
-        chat_key_version: resource.chat_key_version.toString(),
+        chat_key_version: resource.chat_key_version,
+        created_at: resource.createdAt?.toString(),
     }
+}
+
+export type UpdateResource = {
+    type: 'message';
+    message: MessageResource;
+}
+
+export function UpdateResourceMake<T extends UpdateResource['type']>(type: T, value: UpdateResource[T]): UpdateResource {
+    if (type == 'message') {
+        return {
+            type,
+            message: value,
+        }
+    }
+
+    return null as never
 }

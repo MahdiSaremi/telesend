@@ -2,7 +2,7 @@
 
 import {DependencyList, useContext, useEffect, useMemo} from "react";
 import {AppContext} from "@/hooks/types";
-import {AuthInfo} from "@/shared/resources";
+import {AuthInfo, MessageResource, UserResource} from "@/shared/resources";
 import {
     arrayBufferToBase64,
     base64ToArrayBuffer,
@@ -12,11 +12,13 @@ import {
     importPrivateKey,
     importPublicKey, stringToUint8Array, uint8ArrayToString
 } from "@/shared/helpers";
+import {DecryptedMessage} from "@/app/page";
+import {ChatsHybrid} from "@/hooks/hybrid/chats-hybrid";
 
 export function useCore() {
     const app = useContext(AppContext)!
 
-    return useMemo(() => {
+    const core = useMemo(() => {
         return {
             connection: app.connection,
             app,
@@ -64,10 +66,14 @@ export function useCore() {
                     const [ok, data, err] = await app.connection.call<AuthInfo>('login', {
                         username,
                         password,
+                    }, {
+                        alsoInLogin: true,
                     })
 
                     if (ok) {
                         if (data.public_key) {
+                            localStorage.setItem('username', username)
+                            localStorage.setItem('password', password)
                             app?.setSecurityData({
                                 auth: data,
                                 publicKey: await importPublicKey(data.public_key),
@@ -78,6 +84,7 @@ export function useCore() {
                                     data.key_salt!,
                                 )),
                             })
+                            app?.connection.setStatus('connected')
 
                             return [true, 'done']
                         } else {
@@ -98,7 +105,7 @@ export function useCore() {
                     const publicKeyStr = await exportKey(publicKey)
                     const privateKeyStr = await exportKey(privateKey)
 
-                    const encrypted = await encryptPrivateKey(privateKeyStr, password)
+                    const encrypted = await encryptPrivateKey(privateKeyStr, newPassword)
 
                     const [ok, data, err] = await app.connection.call<AuthInfo>('login', {
                         username,
@@ -108,17 +115,20 @@ export function useCore() {
                         encryptedPrivateKey: encrypted.encryptedPrivateKey,
                         iv: encrypted.iv,
                         salt: encrypted.salt,
+                    }, {
+                        alsoInLogin: true,
                     })
 
                     if (ok) {
                         if (data.public_key) {
                             localStorage.setItem('username', username)
-                            localStorage.setItem('password', password)
+                            localStorage.setItem('password', newPassword)
                             app?.setSecurityData({
                                 auth: data,
                                 publicKey: publicKey,
                                 privateKey: privateKey,
                             })
+                            app?.connection.setStatus('connected')
 
                             return [true, null]
                         } else {
@@ -127,10 +137,21 @@ export function useCore() {
                     } else {
                         return [false, err ?? "ورود ناموفق بود. دوباره امتحان کنید."]
                     }
-                }
+                },
             },
 
             encryption: {
+                async messageToDecrypted(message: MessageResource): Promise<MessageResource & DecryptedMessage> {
+                    const chat = ChatsHybrid.getLoaded(message.chat_id)
+                    const key = chat ? await chat.keys.get(core, message.chat_key_version) : null
+
+                    const text = key ? await this.decryptMessage(key, message.text, message.iv) : null
+
+                    return {
+                        ...message,
+                        decrypted_text: text,
+                    }
+                },
                 async decryptMessage(key: Uint8Array, text: string, iv: number[]) {
                     try {
                         return uint8ArrayToString(await decryptUsingCustomKey(
@@ -148,7 +169,7 @@ export function useCore() {
                     )
                 },
                 async encryptMessage(key: Uint8Array, text: string) {
-                    const en = await encryptUsingCustomKey(key, stringToUint8Array(text))
+                    const en = await encryptUsingCustomKey(key, stringToUint8Array(text) as BufferSource)
 
                     return {
                         iv: en.iv,
@@ -169,5 +190,7 @@ export function useCore() {
                 }, [app.connection.status, ...deps ?? []]);
             },
         }
-    }, [app]);
+    }, [app])
+
+    return core
 }

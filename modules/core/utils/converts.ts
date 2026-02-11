@@ -7,8 +7,8 @@ export function persianDateFrom(value: string | null) {
 }
 
 export function persianDateTo(
-    value: PersianDate | null,
-    type: 'date' | 'datetime' = 'datetime',
+    value: PersianDate | null | undefined,
+    type: 'date' | 'datetime' | 'time' = 'datetime',
     timeType: 'hour' | 'minute' | 'second' = 'minute'
 ) {
     if (!value) {
@@ -33,6 +33,14 @@ export function persianDateTo(
             return `${year}-${month}-${day} ${hour}:${minute}`
         } else if (timeType == 'second') {
             return `${year}-${month}-${day} ${hour}:${minute}:${second}`
+        }
+    } else if (type == 'time') {
+        if (timeType == 'hour') {
+            return `${hour}`
+        } else if (timeType == 'minute') {
+            return `${hour}:${minute}`
+        } else if (timeType == 'second') {
+            return `${hour}:${minute}:${second}`
         }
     }
 }

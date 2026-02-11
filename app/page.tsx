@@ -1,11 +1,12 @@
 'use client'
 import {useEffect, useLayoutEffect, useRef, useState} from 'react'
-import {ChatResource, HomeChatResource, MessageResource, UserResource} from "@/shared/resources";
+import {ChatResource, HomeChatResource, MessageResource, UpdateResource, UserResource} from "@/shared/resources";
 import {Button} from "@/components/ui/button";
 import {
+    AlertTriangleIcon,
     ArrowLeftIcon,
     CheckCheckIcon,
-    CheckIcon, LoaderCircleIcon, LockIcon,
+    CheckIcon, ClockIcon, LoaderCircleIcon, LockIcon,
     MenuIcon, MicIcon,
     MoreVerticalIcon,
     SearchIcon, SendIcon,
@@ -24,9 +25,13 @@ import {useOpenCall} from "@/hooks/useOpenCall";
 import {useOnSocket} from "@/hooks/useOnSocket";
 import {useConnection} from "@/hooks/useConnection";
 import {useCore} from "@/hooks/useCore";
-import {useChatKeys} from "@/hooks/useChatKeys";
+import {events} from "@/shared/events";
+import PersianDate from "@alireza-ab/persian-date";
+import {persianDateTo} from "@/modules/core/utils/converts";
+import {ChatHybridType, ChatsHybrid, createChatHybridObject} from "@/hooks/hybrid/chats-hybrid";
+import {useHybrid} from "@/hooks/useHybrid";
 
-type DecryptedMessage = {
+export type DecryptedMessage = {
     decrypted_text: string | null;
 }
 
@@ -287,7 +292,8 @@ function LoginPage() {
 function HomePage() {
     const core = useCore()
     const [loading, setLoading] = useState(true)
-    const [chats, setChats] = useState<(HomeChatResource & DecryptedMessage)[]>([])
+    const chats = useHybrid(ChatsHybrid).watch()
+    const chatsMap = chats.toMap()
 
     core.useConnected(async () => {
         const [ok, data, err] = await core.connection.call<HomeChatResource[]>('getHome', {}, {
@@ -296,16 +302,27 @@ function HomePage() {
         setLoading(false)
 
         if (ok) {
-            setChats(await Promise.all(data.map(async chat => {
-                const decrypted_text = chat.encrypted_key
-                    ? await core.encryption.decryptMessage(await core.encryption.decryptChatKey(chat.encrypted_key), chat.text!, chat.iv!)
-                    : null
+            await Promise.all(data.map(async homeChat => {
+                const h = createChatHybridObject(homeChat.chat)
+                chats.set(homeChat.chat.id, h)
 
-                return {
-                    ...chat,
-                    decrypted_text,
+                if (homeChat.last_message) {
+                    const message = await core.encryption.messageToDecrypted(homeChat.last_message)
+                    h.last_message = message
+                    h.last_message_at = message.created_at ? new Date(message.created_at) : undefined
+                    await h.messages.set(homeChat.last_message.id, message)
                 }
-            })))
+            }))
+        }
+    })
+
+    useOnSocket(events.receiveUpdate, (update: UpdateResource) => {
+        if (update.type == 'message') {
+            // setChats(chats => { todo
+            //     chats.filter(chat => chat.id)
+            //
+            //     return chats
+            // })
         }
     })
 
@@ -374,10 +391,14 @@ function HomePage() {
                                 </div>
                             </div>
                         </div>)}
-                        {!loading && chats.map(chat => <button
+                        {!loading && Array.from(chatsMap.values()).map(chat => <div
                             key={chat.id}
                             className="flex items-center active:bg-black/5 dark:active:bg-white/5 transition-all ps-2"
-                            onClick={() => core.app.pushPage('private_chat', chat.user)}
+                            onClick={() => {
+                                if (chat.type == 'private') {
+                                    core.app.pushPage('private_chat', chat.user)
+                                }
+                            }}
                         >
                             <img
                                 src="https://statics.basalam.com/public-131/users/nABPwW/09-22/iuyJAf1hslqamF7rlnz2al0M3HJmuFOllWosEyjcCBiruDsvCe.jpg_800X800X70.jpg"
@@ -388,7 +409,9 @@ function HomePage() {
                                 className="h-18 flex flex-col items-start justify-center ms-2 gap-1 grow border-b border-primary/5 dark:border-white/5 min-w-0">
                                 <div className="h-6 flex items-center w-full gap-2">
                                     <div className="overflow-hidden grow text-start">
-                                        <div>{chat.title}</div>
+                                        <div>
+                                            {chat.type == 'private' && chat.user.name}
+                                        </div>
                                     </div>
                                     <div>
                                         {/*{i % 3 == 0 && <CheckCheckIcon className="size-4 text-primary"/>}*/}
@@ -399,13 +422,13 @@ function HomePage() {
                                 <div className="h-4 flex items-center w-full gap-4 min-w-0 pe-2">
                                     <div className="overflow-hidden grow text-start min-w-0">
                                         <div
-                                            className="text-xs text-muted-foreground max-w-full truncate">{chat.decrypted_text}</div>
+                                            className="text-xs text-muted-foreground max-w-full truncate">{chat.last_message?.decrypted_text}</div>
                                     </div>
                                     {/*{i % 3 == 2 && <span*/}
                                     {/*    className="bg-primary text-primary-foreground rounded-xl px-1.5 text-sm">2</span>}*/}
                                 </div>
                             </div>
-                        </button>)}
+                        </div>)}
                     </div>
                 </div>
             </div>
@@ -589,6 +612,11 @@ function SearchPage() {
     )
 }
 
+type MessageWithData = MessageResource & DecryptedMessage & {
+    created_at_persian?: PersianDate;
+    status?: 'sending' | 'failed',
+}
+
 function PrivateChatPage({user}: {
     user: UserResource;
 }) {
@@ -596,6 +624,22 @@ function PrivateChatPage({user}: {
     const [typingText, setTypingText] = useState("")
     const chatContentElement = useRef<HTMLDivElement | null>(null)
     const inputElement = useRef<HTMLDivElement | null>(null)
+    const [chat, setChat] = useState<ChatResource | null>(null)
+    const [messages, setMessages] = useState<MessageWithData[]>([])
+
+    async function setChatValue(chat: ChatResource) {
+        if (ChatsHybrid.loaded(chat.id)) {
+            chat = {
+                ...ChatsHybrid.getLoaded(chat.id),
+                ...chat,
+            }
+        } else {
+            chat = createChatHybridObject(chat)
+        }
+
+        await ChatsHybrid.set(chat.id, chat as ChatHybridType)
+        setChat(chat)
+    }
 
     useEffect(() => {
         if (!inputElement.current || !chatContentElement.current) return;
@@ -613,22 +657,20 @@ function PrivateChatPage({user}: {
         return () => observer.disconnect();
     }, [inputElement, chatContentElement])
 
-    const [chat, setChat] = useState<ChatResource | null>(null)
-    const [messages, setMessages] = useState<(MessageResource & DecryptedMessage)[]>([])
-
     useOpenCall({
         open: call => {
             call('openChat', {user_id: user.id}, {
                 success: async (data: ChatResource | null) => {
                     if (data) {
-                        setChat(data)
-                        await keys.addEncrypted(data!.version, data!.encrypted_chat_key)
+                        await setChatValue(data)
+                        const keys = ChatsHybrid.getLoaded(data.id)?.keys!
+                        await keys.set(data!.version, await core.encryption.decryptChatKey(data!.encrypted_chat_key))
                         currentKeyVersion.current = data!.version
 
                         await core.connection.call<MessageResource[]>('getChatMessages', {chat_id: data.id}).then(async ([ok, data, err]) => {
                             if (ok) {
                                 const newMessages = (await Promise.all(data!.map(async message => {
-                                    const key = await keys.get(message.chat_key_version)
+                                    const key = await keys.get(core, message.chat_key_version)
 
                                     if (!key) {
                                         return null
@@ -637,7 +679,8 @@ function PrivateChatPage({user}: {
                                     return {
                                         ...message,
                                         decrypted_text: await core.encryption.decryptMessage(key, message.text, message.iv),
-                                    } satisfies MessageResource & DecryptedMessage
+                                        created_at_persian: message.created_at ? new PersianDate(new Date(message.created_at)) : undefined,
+                                    } satisfies MessageWithData
                                 }))).filter(v => v !== null)
 
                                 setMessages(messages => [...messages, ...newMessages])
@@ -657,19 +700,20 @@ function PrivateChatPage({user}: {
         },
     })
 
-    const keys = useChatKeys(chat?.id)
-    const currentKeyVersion = useRef<string | null>(null)
+    const currentKeyVersion = useRef<number | null>(null)
 
-    const receiveUpdate = async (data: any) => {
+    const receiveUpdate = async (data: MessageResource) => {
         console.log(data)
 
-        const key = await keys.get(currentKeyVersion.current!)
+        const keys = ChatsHybrid.getLoaded(chat?.id!)?.keys!
+        const key = await keys.get(core, currentKeyVersion.current!)
 
         if (key) {
             const newMessage = {
                 ...data,
                 decrypted_text: await core.encryption.decryptMessage(key, data.text, data.iv),
-            } satisfies MessageResource & DecryptedMessage
+                created_at_persian: data.created_at ? new PersianDate(new Date(data.created_at)) : undefined,
+            } satisfies MessageWithData
 
             setMessages(messages => [...messages, newMessage])
 
@@ -679,15 +723,30 @@ function PrivateChatPage({user}: {
         }
     }
 
-    useOnSocket(`update:chats.${chat?.id}`, receiveUpdate)
-    useOnSocket(`update:chats.create-with-user.${user.id}`, receiveUpdate)
+    useOnSocket(events.chats.receiveUpdate(chat?.id), receiveUpdate)
+    useOnSocket(events.chats.new.withUser(user.id), receiveUpdate) // todo
 
     const sendMessage = async () => {
         if (typingText.trim() == '') return
         const text = typingText.trim()
-        let chatId = chat?.id
+        let chatId = chat?.id!
 
         setTypingText('')
+
+        const temporaryId = Math.random()
+        setMessages(messages => [...messages, {
+            id: temporaryId,
+            chat_id: chatId!,
+            text: "",
+            decrypted_text: text,
+            sender: core.app.securityData?.auth!,
+            chat_key_version: 0,
+            iv: [],
+            status: 'sending',
+        }])
+        if (scrollIsEnd()) {
+            scrollToEndInNextRender()
+        }
 
         if (!currentKeyVersion.current) {
             const [ok, data, err] = await core.connection.call<ChatResource>('createPrivateChat', {user_id: user.id}, {
@@ -695,21 +754,23 @@ function PrivateChatPage({user}: {
             })
 
             if (ok) {
-                chatId = data!.id
-                setChat(data)
-                await keys.addEncrypted(data!.version, data!.encrypted_chat_key)
+                chatId = data!.id!
+                await setChatValue(data)
+                const keys = ChatsHybrid.getLoaded(chatId)?.keys!
+                await keys.set(data!.version, await core.encryption.decryptChatKey(data!.encrypted_chat_key))
                 currentKeyVersion.current = data!.version
             } else {
                 return
             }
         }
 
-        const key = await keys.get(currentKeyVersion.current)
+        const keys = ChatsHybrid.getLoaded(chatId)?.keys!
+        const key = await keys.get(core, currentKeyVersion.current)
 
         if (key) {
             const encrypted = await core.encryption.encryptMessage(key, text)
 
-            const [ok, data, err] = await core.connection.call('sendMessage', {
+            const [ok, data, err] = await core.connection.call<MessageResource>('sendMessage', {
                 chat_id: chatId,
                 version: currentKeyVersion.current,
                 text: encrypted.text,
@@ -720,13 +781,12 @@ function PrivateChatPage({user}: {
                 const newMessage = {
                     ...data,
                     decrypted_text: text,
-                } satisfies MessageResource & DecryptedMessage
+                    created_at_persian: data!.created_at ? new PersianDate(new Date(data!.created_at)) : undefined,
+                } satisfies MessageWithData
 
-                setMessages(messages => [...messages, newMessage])
-
-                if (scrollIsEnd()) {
-                    scrollToEndInNextRender()
-                }
+                setMessages(messages => messages.map(message => message.id == temporaryId ? newMessage : message))
+            } else {
+                setMessages(messages => messages.map(message => message.id == temporaryId ? {...message, status: 'failed'} : message))
             }
         }
     }
@@ -745,7 +805,7 @@ function PrivateChatPage({user}: {
     const scrollIsEnd = (): boolean => {
         if (!chatContentElement.current) return false
 
-        return chatContentElement.current.scrollHeight - chatContentElement.current.clientHeight - chatContentElement.current.scrollTop < 30
+        return chatContentElement.current.scrollHeight - chatContentElement.current.clientHeight - chatContentElement.current.scrollTop < 60
     }
 
     const scrollToEndInNextRender = (instant: boolean = false) => {
@@ -785,7 +845,12 @@ function PrivateChatPage({user}: {
                             />
                             <div className="flex flex-col text-left justify-center grow min-w-0">
                                 <div className="font-bold truncate max-w-full">{user.name}</div>
-                                <div className="text-xs">آخرین بازدید به تازگی</div>
+                                <div className="text-xs">
+                                    {core.connection.status == 'logging' ? "در حال ورود..." :
+                                        core.connection.status == 'connecting' ? "در حال اتصال..." :
+                                            "آخرین بازدید به تازگی"
+                                    }
+                                </div>
                             </div>
                         </div>
                         <button className="rounded-full aspect-square bg-transparent active:bg-white/10 transition-all"
@@ -801,7 +866,10 @@ function PrivateChatPage({user}: {
                             <PrivateChatMessage
                                 key={message.id}
                                 message={message}
-                                isChained={false} // todo
+                                isChained={!!(
+                                    messages[i + 1] && messages[i + 1].created_at_persian && message.created_at_persian &&
+                                    messages[i + 1].created_at_persian!.diff(message.created_at_persian!, 'seconds') < 150
+                                )}
                             />
                         ))}
                     </div>
@@ -876,11 +944,11 @@ function PrivateChatPage({user}: {
 }
 
 function PrivateChatMessage({message, isChained}: {
-    message: MessageResource & DecryptedMessage;
+    message: MessageWithData;
     isChained: boolean;
 }) {
     const core = useCore()
-    const isSelf = message.sender_id == core.app.securityData?.auth.id
+    const isSelf = message.sender.id == core.app.securityData?.auth.id
 
     return (
         <div className={cn("px-2 flex", isSelf ? "justify-start" : "justify-end", isChained ? "mb-0.5" : "mb-1.5")}>
@@ -984,11 +1052,16 @@ function PrivateChatMessage({message, isChained}: {
                         {/*</div>*/}
                         <div className="flex items-end gap-1 self-end me-auto select-none">
                             {isSelf && <span className="text-[0.6rem] opacity-80 w-max">
-                                {isChained ? <CheckCheckIcon className="size-3.5 text-primary"/> :
-                                    <CheckIcon className="size-3.5 text-slate-500/50 dark:text-white/50"/>}
+                                {message.status == 'sending' ? <ClockIcon className="size-3.5 text-slate-500/50"/> :
+                                    message.status == 'failed' ? <AlertTriangleIcon className="size-3.5 text-red-500"/> :
+                                        isChained ? <CheckCheckIcon className="size-3.5 text-primary"/> :
+                                            <CheckIcon className="size-3.5 text-slate-500/50 dark:text-white/50"/>
+                                }
                             </span>}
                             {/*<span className="text-[0.6rem] opacity-80 w-max">ویرایش شده</span>*/}
-                            <span className="text-xs opacity-80">18:32</span>
+                            {message.status === undefined && <span className="text-xs opacity-80">
+                                {persianDateTo(message.created_at_persian, 'time', 'minute')}
+                            </span>}
                         </div>
                     </div>
                 </div>
